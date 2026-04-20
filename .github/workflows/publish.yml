@@ -45,6 +45,7 @@ jobs:
 
       - name: Publish to npm
         if: github.event_name == 'push'
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ''
+        run: |
+          sed -i '/^\/\/registry.npmjs.org\/:_authToken/d' "$NPM_CONFIG_USERCONFIG"
+          unset NODE_AUTH_TOKEN
+          npm publish --access public
