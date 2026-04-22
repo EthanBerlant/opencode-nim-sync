@@ -6,6 +6,9 @@ vi.mock("../plugin/nim-sync-service.js", () => ({
   createNIMSyncService: vi.fn(() => ({
     manualRefresh,
   })),
+  getOrCreateNIMSyncService: vi.fn(() => ({
+    manualRefresh,
+  })),
 }));
 
 import plugin from "../plugin/opencode-tui.js";

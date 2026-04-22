@@ -104,13 +104,36 @@ export function validateOpenCodeConfig(config: unknown): {
     if (provider.nim && typeof provider.nim === "object") {
       const nim = provider.nim as Record<string, unknown>;
 
-      // Check required fields
-      if (typeof nim.npm !== "string") {
-        errors.push("provider.nim.npm must be a string");
-      }
-      if (typeof nim.name !== "string") {
-        errors.push("provider.nim.name must be a string");
-      }
+        // Check required fields
+        if (typeof nim.npm !== "string") {
+          errors.push("provider.nim.npm must be a string");
+        }
+        if (typeof nim.name !== "string") {
+          errors.push("provider.nim.name must be a string");
+        }
+
+        // Validate baseURL format if present
+        if (nim.options && typeof nim.options === "object") {
+          const nimOptions = nim.options as Record<string, unknown>;
+          if (nimOptions.baseURL !== undefined) {
+            if (typeof nimOptions.baseURL !== "string") {
+              errors.push("provider.nim.options.baseURL must be a string");
+            } else {
+              try {
+                const url = new URL(nimOptions.baseURL as string);
+                if (url.protocol !== "https:" && url.protocol !== "http:") {
+                  errors.push(
+                    "provider.nim.options.baseURL must use http: or https: protocol",
+                  );
+                }
+              } catch {
+                errors.push(
+                  "provider.nim.options.baseURL must be a valid URL",
+                );
+              }
+            }
+          }
+        }
 
       // Validate models structure if present
       if (nim.models && typeof nim.models === "object") {

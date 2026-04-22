@@ -203,7 +203,7 @@ export async function atomicWrite(
   options: AtomicWriteOptions = {},
 ): Promise<void> {
   const dir = path.dirname(filePath);
-  const tempPath = `${filePath}.${Date.now()}.tmp`;
+  const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
 
   try {
     await fs.mkdir(dir, { recursive: true });
@@ -348,10 +348,13 @@ export async function getConfigFilePath(): Promise<string> {
  */
 function isProcessRunning(pid: number): boolean {
   try {
-    // Signal 0 doesn't kill the process, just checks if it exists
     process.kill(pid, 0);
     return true;
-  } catch {
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EPERM") {
+      return true;
+    }
     return false;
   }
 }
@@ -404,26 +407,6 @@ export async function acquireLock(
 
   await ensureDir(lockDir);
 
-  try {
-    const lockContent = await fs.readFile(lockPath, "utf-8");
-    const metadata = JSON.parse(lockContent) as LockMetadata;
-    const staleThreshold = Date.now() - LOCK_STALE_THRESHOLD_MS;
-
-    // Check if timestamp is stale OR if the holding process is no longer running
-    const isStale = metadata.timestamp < staleThreshold;
-    const processExists = metadata.pid ? isProcessRunning(metadata.pid) : true;
-
-    // Note: TOCTOU race possible between check and delete, but mitigated by
-    // atomic 'wx' flag in subsequent fs.open() call which provides ultimate protection
-    if (isStale || !processExists) {
-      await fs.unlink(lockPath);
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error("Failed to clean up stale lock");
-    }
-  }
-
   const startTime = Date.now();
 
   while (Date.now() - startTime < timeoutMs) {
@@ -444,13 +427,34 @@ export async function acquireLock(
         }
       };
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        try {
+          const lockContent = await fs.readFile(lockPath, "utf-8");
+          const metadata = JSON.parse(lockContent) as LockMetadata;
+          const staleThreshold = Date.now() - LOCK_STALE_THRESHOLD_MS;
+
+          const isStale = metadata.timestamp < staleThreshold;
+          const processExists = metadata.pid ? isProcessRunning(metadata.pid) : true;
+
+          if (isStale || !processExists) {
+            try {
+              await fs.unlink(lockPath);
+            } catch {
+              // Lock may have been released by another process
+            }
+          }
+        } catch (staleCheckError) {
+          if ((staleCheckError as NodeJS.ErrnoException).code !== "ENOENT") {
+            console.error("Failed to clean up stale lock");
+          }
+        }
+
+        await new Promise((resolve) =>
+          setTimeout(resolve, LOCK_RETRY_INTERVAL_MS),
+        );
+      } else {
         throw error;
       }
-
-      await new Promise((resolve) =>
-        setTimeout(resolve, LOCK_RETRY_INTERVAL_MS),
-      );
     }
   }
 

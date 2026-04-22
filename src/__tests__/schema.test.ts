@@ -117,22 +117,81 @@ describe("validateOpenCodeConfig", () => {
     expect(validateOpenCodeConfig(123).valid).toBe(false);
   });
 
-  it("validates baseURL format when present", () => {
+  it("reports error for non-string baseURL", () => {
     const config = {
       provider: {
         nim: {
           npm: "@ai-sdk/openai-compatible",
           name: "NVIDIA NIM",
           options: {
-            baseURL: 123, // should be string/uri
+            baseURL: 123,
           },
         },
       },
     };
 
-    // Note: format validation is basic, just checks type
     const result = validateOpenCodeConfig(config);
-    expect(result.valid).toBe(true); // baseURL is in additionalProperties
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain(
+      "provider.nim.options.baseURL must be a string",
+    );
+  });
+
+  it("reports error for malformed baseURL", () => {
+    const config = {
+      provider: {
+        nim: {
+          npm: "@ai-sdk/openai-compatible",
+          name: "NVIDIA NIM",
+          options: {
+            baseURL: "not-a-valid-url",
+          },
+        },
+      },
+    };
+
+    const result = validateOpenCodeConfig(config);
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain(
+      "provider.nim.options.baseURL must be a valid URL",
+    );
+  });
+
+  it("reports error for non-http baseURL protocol", () => {
+    const config = {
+      provider: {
+        nim: {
+          npm: "@ai-sdk/openai-compatible",
+          name: "NVIDIA NIM",
+          options: {
+            baseURL: "ftp://malicious.example.com",
+          },
+        },
+      },
+    };
+
+    const result = validateOpenCodeConfig(config);
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain(
+      "provider.nim.options.baseURL must use http: or https: protocol",
+    );
+  });
+
+  it("accepts valid https baseURL", () => {
+    const config = {
+      provider: {
+        nim: {
+          npm: "@ai-sdk/openai-compatible",
+          name: "NVIDIA NIM",
+          options: {
+            baseURL: "https://integrate.api.nvidia.com/v1",
+          },
+        },
+      },
+    };
+
+    const result = validateOpenCodeConfig(config);
+    expect(result.valid).toBe(true);
   });
 
   it("reports error when model is null", () => {

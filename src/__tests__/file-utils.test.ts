@@ -413,29 +413,34 @@ describe("File Utils", () => {
       );
     });
 
-    it("cleans up stale lock from crashed process", async () => {
-      const mockFd: MockFileHandle = {
-        close: vi.fn().mockResolvedValue(undefined),
-        writeFile: vi.fn().mockResolvedValue(undefined),
-      };
+  it("cleans up stale lock from crashed process", async () => {
+    const mockFd: MockFileHandle = {
+      close: vi.fn().mockResolvedValue(undefined),
+      writeFile: vi.fn().mockResolvedValue(undefined),
+    };
 
-      // Simulate a stale lock file with old timestamp
-      const staleLockMetadata = JSON.stringify({
-        pid: 99999, // Non-existent process
-        timestamp: Date.now() - 10 * 60 * 1000, // 10 minutes ago (stale)
-      });
+    const eexistError = new Error("Lock exists") as NodeJS.ErrnoException;
+    eexistError.code = "EEXIST";
 
-      vi.mocked(fs.readFile).mockResolvedValueOnce(staleLockMetadata);
-      vi.mocked(fs.unlink).mockResolvedValue(undefined);
-      vi.mocked(fs.open).mockResolvedValue(mockFd as never);
-      vi.mocked(fs.mkdir).mockResolvedValue(undefined);
-
-      const release = await acquireLock("test-lock");
-      expect(typeof release).toBe("function");
-
-      // Should have called unlink to remove the stale lock
-      expect(fs.unlink).toHaveBeenCalled();
+    // Simulate a stale lock file with old timestamp
+    const staleLockMetadata = JSON.stringify({
+      pid: 99999, // Non-existent process
+      timestamp: Date.now() - 10 * 60 * 1000, // 10 minutes ago (stale)
     });
+
+    vi.mocked(fs.open)
+      .mockRejectedValueOnce(eexistError)
+      .mockResolvedValueOnce(mockFd as never);
+    vi.mocked(fs.readFile).mockResolvedValueOnce(staleLockMetadata);
+    vi.mocked(fs.unlink).mockResolvedValue(undefined);
+    vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+
+    const release = await acquireLock("test-lock");
+    expect(typeof release).toBe("function");
+
+    // Should have called unlink to remove the stale lock
+    expect(fs.unlink).toHaveBeenCalled();
+  });
 
     it("handles release lock failure gracefully", async () => {
       const mockFd: MockFileHandle = {

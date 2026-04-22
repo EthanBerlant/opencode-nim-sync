@@ -1,10 +1,10 @@
 import type { Plugin, PluginModule } from "@opencode-ai/plugin";
-import { createNIMSyncService } from "./nim-sync-service.js";
+import { getOrCreateNIMSyncService } from "./nim-sync-service.js";
 
 const BACKGROUND_RETRY_DELAYS_MS = [15 * 60 * 1000, 60 * 60 * 1000];
 
 const server: Plugin = async (input) => {
-  const service = createNIMSyncService({
+  const service = getOrCreateNIMSyncService({
     showToast: async ({ title, message, variant }) => {
       await input.client.tui.showToast({
         body: {
@@ -58,21 +58,26 @@ const server: Plugin = async (input) => {
   const runRefreshCycle = async (): Promise<void> => {
     const result = await service.refreshModels();
 
-    if (result === "failed") {
-      scheduleRetryRefresh();
-      return;
+    switch (result) {
+      case "failed":
+        scheduleRetryRefresh();
+        return;
+      case "missing-api-key":
+        clearScheduledRefresh();
+        return;
+      case "in-progress":
+        return;
+      case "updated":
+      case "unchanged":
+      case "skipped":
+        await scheduleNextStaleRefresh();
+        return;
+      default: {
+        const _exhaustive: never = result;
+        console.error("[NIM-Sync] Unknown refresh result:", _exhaustive);
+        scheduleRetryRefresh();
+      }
     }
-
-    if (result === "missing-api-key") {
-      clearScheduledRefresh();
-      return;
-    }
-
-    if (result === "in-progress") {
-      return;
-    }
-
-    await scheduleNextStaleRefresh();
   };
 
   return {

@@ -4,6 +4,12 @@ export interface NIMModel {
   description?: string;
   model_type?: string;
   quantization?: string;
+  created?: number;
+  owned_by?: string;
+  object?: string;
+  root?: string;
+  parent?: string;
+  permission?: unknown[];
 }
 
 export interface NIMApiResponse {

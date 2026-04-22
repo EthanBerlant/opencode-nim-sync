@@ -10,6 +10,11 @@ vi.mock("../plugin/nim-sync-service.js", () => ({
     getNextRefreshDelay,
     manualRefresh,
   })),
+  getOrCreateNIMSyncService: vi.fn(() => ({
+    refreshModels,
+    getNextRefreshDelay,
+    manualRefresh,
+  })),
 }));
 
 import plugin from "../plugin/opencode-server.js";

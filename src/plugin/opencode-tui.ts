@@ -10,7 +10,7 @@ import {
   NIM_REFRESH_TUI_COMMAND_VALUE,
   PROMPT_SUBMIT_COMMAND_VALUE,
 } from "./nim-refresh-command.js";
-import { createNIMSyncService } from "./nim-sync-service.js";
+import { getOrCreateNIMSyncService } from "./nim-sync-service.js";
 
 type PromptRefHolder = {
   current: TuiPromptRef | undefined;
@@ -50,7 +50,7 @@ const bindPromptRef = (
 
 const tui: TuiPlugin = async (api) => {
   const promptRef: PromptRefHolder = { current: undefined };
-  const service = createNIMSyncService({
+  const service = getOrCreateNIMSyncService({
     showToast: ({ title, message, variant }) => {
       api.ui.toast({
         title,

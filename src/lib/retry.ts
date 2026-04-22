@@ -13,6 +13,8 @@ export interface RetryOptions {
   retryOnNetworkError?: boolean;
   /** Status codes to retry (default: [429, 500, 502, 503, 504]) */
   retryStatusCodes?: number[];
+  /** Request timeout in milliseconds (default: 30000) */
+  timeoutMs?: number;
 }
 
 const DEFAULT_OPTIONS: Required<RetryOptions> = {
@@ -21,6 +23,7 @@ const DEFAULT_OPTIONS: Required<RetryOptions> = {
   maxDelay: 10000,
   retryOnNetworkError: true,
   retryStatusCodes: [429, 500, 502, 503, 504],
+  timeoutMs: 30_000,
 };
 
 /**
@@ -156,18 +159,26 @@ export async function retryableFetch(
   endpoint: string,
   options: RetryOptions = {},
 ): Promise<Response> {
+  const opts = { ...DEFAULT_OPTIONS, ...options };
   return withRetry(async () => {
-    const response = await fetch(`${baseURL}${endpoint}`, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), opts.timeoutMs);
+    try {
+      const response = await fetch(`${baseURL}${endpoint}`, {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      throw { statusCode: response.status, statusText: response.statusText };
+      if (!response.ok) {
+        throw { statusCode: response.status, statusText: response.statusText };
+      }
+
+      return response;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    return response;
   }, options);
 }

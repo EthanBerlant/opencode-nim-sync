@@ -81,41 +81,35 @@ const defaultGetConfigSnapshot = async (): Promise<OpenCodeConfig> => {
   return readJSONC<OpenCodeConfig>(await getConfigFilePath());
 };
 
-const sortKeysDeep = (value: unknown): unknown => {
+const deepSortedStringify = (value: unknown): string => {
+  if (value === null || value === undefined) return "null";
+  if (typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) {
-    return value.map(sortKeysDeep);
+    return "[" + value.map(deepSortedStringify).join(",") + "]";
   }
-
-  if (value && typeof value === "object") {
-    return Object.keys(value as Record<string, unknown>)
+  const obj = value as Record<string, unknown>;
+  return (
+    "{" +
+    Object.keys(obj)
       .sort()
-      .reduce<Record<string, unknown>>((acc, key) => {
-        acc[key] = sortKeysDeep((value as Record<string, unknown>)[key]);
-        return acc;
-      }, {});
-  }
-
-  return value;
+      .map((k) => JSON.stringify(k) + ":" + deepSortedStringify(obj[k]))
+      .join(",") +
+    "}"
+  );
 };
 
 const managedNIMConfigMatches = (
   currentConfig: NonNullable<OpenCodeConfig["provider"]>["nim"] | undefined,
   nextConfig: NonNullable<OpenCodeConfig["provider"]>["nim"],
 ): boolean => {
-  return (
-    JSON.stringify(sortKeysDeep(currentConfig ?? null)) ===
-    JSON.stringify(sortKeysDeep(nextConfig))
-  );
+  return deepSortedStringify(currentConfig ?? null) === deepSortedStringify(nextConfig);
 };
 
 const managedRefreshCommandMatches = (
   currentConfig: RefreshCommandConfig | undefined,
   nextConfig: RefreshCommandConfig,
 ): boolean => {
-  return (
-    JSON.stringify(sortKeysDeep(currentConfig ?? null)) ===
-    JSON.stringify(sortKeysDeep(nextConfig))
-  );
+  return deepSortedStringify(currentConfig ?? null) === deepSortedStringify(nextConfig);
 };
 
 const buildManagedRefreshCommand = (): NonNullable<
@@ -217,15 +211,21 @@ function validateAPIResponse(response: unknown): NIMModel[] {
           "]",
       );
     seenIds.add(m.id);
-    models.push({
-      id: m.id,
-      name: m.name,
-      description:
-        typeof m.description === "string" ? m.description : undefined,
-      model_type: typeof m.model_type === "string" ? m.model_type : undefined,
-      quantization:
-        typeof m.quantization === "string" ? m.quantization : undefined,
-    });
+      models.push({
+        id: m.id,
+        name: m.name,
+        description:
+          typeof m.description === "string" ? m.description : undefined,
+        model_type: typeof m.model_type === "string" ? m.model_type : undefined,
+        quantization:
+          typeof m.quantization === "string" ? m.quantization : undefined,
+        created: typeof m.created === "number" ? m.created : undefined,
+        owned_by: typeof m.owned_by === "string" ? m.owned_by : undefined,
+        object: typeof m.object === "string" ? m.object : undefined,
+        root: typeof m.root === "string" ? m.root : undefined,
+        parent: typeof m.parent === "string" ? m.parent : undefined,
+        permission: Array.isArray(m.permission) ? m.permission : undefined,
+      });
   }
   return models;
 }
@@ -491,6 +491,21 @@ export function createNIMSyncService(
     const configPath = await getConfigFilePath();
     const config = await readJSONC<OpenCodeConfig>(configPath);
 
+    const oldModels = config?.provider?.nim?.models;
+    const fetchedIds = new Set(models.map((m) => m.id));
+
+    if (oldModels) {
+      for (const [id, entry] of Object.entries(oldModels)) {
+        if (!fetchedIds.has(id) && entry?.options && Object.keys(entry.options).length > 0) {
+          showToast({
+            title: "Model Removed",
+            message: `Model "${id}" was removed from NVIDIA API. Custom options for this model were discarded.`,
+            variant: "info",
+          });
+        }
+      }
+    }
+
     const newModels = models.reduce(
       (acc, m) => {
         acc[m.id] = {
@@ -560,10 +575,10 @@ export function createNIMSyncService(
         modelsHash,
         baseURL: NIM_BASE_URL,
       });
-    } catch {
-      /* non-fatal */
-    }
-    return true;
+} catch {
+    /* non-fatal */
+  }
+  return true;
   };
 
   const runRefreshModels = async (
@@ -633,13 +648,14 @@ export function createNIMSyncService(
       try {
         await writeCache({
           modelsHash: "",
+          lastRefresh: Date.now(),
           lastError: msg,
           baseURL: NIM_BASE_URL,
         });
-      } catch {
-        /* ignore */
-      }
-      return "failed";
+} catch {
+    /* non-fatal */
+  }
+  return "failed";
     } finally {
       refreshInProgress = false;
     }
@@ -679,4 +695,15 @@ export function createNIMSyncService(
     manualRefresh,
     shouldRefresh,
   };
+}
+
+let sharedService: NIMSyncService | null = null;
+
+export function getOrCreateNIMSyncService(
+  options: NIMSyncServiceOptions = {},
+): NIMSyncService {
+  if (!sharedService) {
+    sharedService = createNIMSyncService(options);
+  }
+  return sharedService;
 }

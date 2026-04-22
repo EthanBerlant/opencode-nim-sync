@@ -21,7 +21,7 @@ vi.mock("crypto", () => {
   };
 });
 
-const flushAsyncWork = async (cycles = 5): Promise<void> => {
+const flushAsyncWork = async (cycles = 20): Promise<void> => {
   for (let i = 0; i < cycles; i++) {
     await Promise.resolve();
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -262,12 +262,12 @@ describe("NIM Sync Unit Tests", () => {
         .mock.calls.map(([filePath]) => String(filePath));
       expect(
         writePaths.some((filePath) =>
-          /opencode\.json(\.\d+\.tmp)?$/.test(filePath),
+          /opencode\.json(\.\d+\.[a-z0-9]+\.tmp)?$/.test(filePath),
         ),
       ).toBe(true);
       expect(
         writePaths.some((filePath) =>
-          /opencode\.jsonc(\.\d+\.tmp)?$/.test(filePath),
+          /opencode\.jsonc(\.\d+\.[a-z0-9]+\.tmp)?$/.test(filePath),
         ),
       ).toBe(false);
     });
@@ -293,12 +293,12 @@ describe("NIM Sync Unit Tests", () => {
         .mock.calls.map(([filePath]) => String(filePath));
       expect(
         writePaths.some((filePath) =>
-          /opencode\.json(\.\d+\.tmp)?$/.test(filePath),
+          /opencode\.json(\.\d+\.[a-z0-9]+\.tmp)?$/.test(filePath),
         ),
       ).toBe(true);
       expect(
         writePaths.some((filePath) =>
-          /opencode\.jsonc(\.\d+\.tmp)?$/.test(filePath),
+          /opencode\.jsonc(\.\d+\.[a-z0-9]+\.tmp)?$/.test(filePath),
         ),
       ).toBe(false);
     });
@@ -888,8 +888,9 @@ describe("NIM Sync Unit Tests", () => {
         );
       const cachePayload = JSON.parse(String(cacheWrite?.[1]));
 
-      expect(cachePayload.lastRefresh).toBeUndefined();
-      expect(cachePayload.lastError).toContain("Network error");
+    expect(cachePayload.lastRefresh).toBeDefined();
+    expect(typeof cachePayload.lastRefresh).toBe("number");
+    expect(cachePayload.lastError).toContain("Network error");
     });
   });
 
@@ -1148,63 +1149,65 @@ describe("NIM Sync Unit Tests", () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    it("does not arm the rate limiter when a manual refresh is blocked by an in-progress refresh", async () => {
-      const mockFetch = vi.fn().mockImplementation(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        return {
-          ok: true,
-          json: () => Promise.resolve({ data: [{ id: "m1", name: "M1" }] }),
-        };
-      });
-      global.fetch = mockFetch;
-
-      let nimRefreshHandler: (() => Promise<void>) | null = null;
-      mockPluginAPI.command.register = vi.fn((name, handler) => {
-        if (name === "nim-refresh") {
-          nimRefreshHandler = handler as () => Promise<void>;
-        }
-      }) as any;
-
-      const plugin = await syncNIMModels(mockPluginAPI);
-      await plugin.init?.();
-      await flushAsyncWork();
-
-      const inFlightRefresh = plugin.refreshModels?.(true);
-      await flushAsyncWork();
-
-      expect(nimRefreshHandler).not.toBeNull();
-      if (nimRefreshHandler) {
-        await nimRefreshHandler();
-      }
-
-      expect(mockPluginAPI.tui.toast.show).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "NVIDIA Refresh In Progress",
-          description: "A model refresh is already running.",
-          variant: "default",
-        }),
-      );
-
-      vi.clearAllMocks();
-      if (nimRefreshHandler) {
-        await nimRefreshHandler();
-      }
-
-      expect(mockPluginAPI.tui.toast.show).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "NVIDIA Refresh In Progress",
-          description: "A model refresh is already running.",
-          variant: "default",
-        }),
-      );
-      expect(mockPluginAPI.tui.toast.show).not.toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "Rate Limited",
-        }),
-      );
-
-      await inFlightRefresh;
+  it("does not arm the rate limiter when a manual refresh is blocked by an in-progress refresh", async () => {
+    let resolveFetch: (() => void) | null = null;
+    const mockFetch = vi.fn().mockImplementation(async () => {
+      await new Promise<void>((resolve) => { resolveFetch = resolve; });
+      return {
+        ok: true,
+        json: () => Promise.resolve({ data: [{ id: "m1", name: "M1" }] }),
+      };
     });
+    global.fetch = mockFetch;
+
+    let nimRefreshHandler: (() => Promise<void>) | null = null;
+    mockPluginAPI.command.register = vi.fn((name, handler) => {
+      if (name === "nim-refresh") {
+        nimRefreshHandler = handler as () => Promise<void>;
+      }
+    }) as any;
+
+    const plugin = await syncNIMModels(mockPluginAPI);
+    await plugin.init?.();
+    await flushAsyncWork();
+
+    const inFlightRefresh = plugin.refreshModels?.(true);
+    await flushAsyncWork();
+
+    expect(nimRefreshHandler).not.toBeNull();
+    if (nimRefreshHandler) {
+      await nimRefreshHandler();
+    }
+
+    expect(mockPluginAPI.tui.toast.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "NVIDIA Refresh In Progress",
+        description: "A model refresh is already running.",
+        variant: "default",
+      }),
+    );
+
+    vi.clearAllMocks();
+    if (nimRefreshHandler) {
+      await nimRefreshHandler();
+    }
+
+    expect(mockPluginAPI.tui.toast.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "NVIDIA Refresh In Progress",
+        description: "A model refresh is already running.",
+        variant: "default",
+      }),
+    );
+    expect(mockPluginAPI.tui.toast.show).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Rate Limited",
+      }),
+    );
+
+    resolveFetch?.();
+    await inFlightRefresh;
+  });
 
     it("does not arm the rate limiter when a manual refresh is blocked by missing credentials", async () => {
       delete process.env.NVIDIA_API_KEY;

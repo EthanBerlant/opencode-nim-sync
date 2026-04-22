@@ -10,11 +10,12 @@ export const PROMPT_SUBMIT_COMMAND_VALUE = "prompt.submit";
 type PromptSubmitRef = Pick<TuiPromptRef, "current" | "reset" | "submit">;
 
 export const isNIMRefreshSlashCommand = (input: string): boolean => {
-  if (!input.startsWith("/")) {
+  const trimmed = input.trimStart();
+  if (!trimmed.startsWith("/")) {
     return false;
   }
 
-  const firstLine = input.split(/\r?\n/, 1)[0];
+  const firstLine = trimmed.split(/\r?\n/, 1)[0];
   const command = firstLine.split(" ")[0]?.slice(1);
 
   return command === NIM_REFRESH_COMMAND_NAME;
@@ -24,7 +25,7 @@ export const handlePromptSubmit = async (
   promptRef: PromptSubmitRef | undefined,
   manualRefresh: () => Promise<void>,
 ): Promise<boolean> => {
-  if (!promptRef) {
+  if (!promptRef?.current) {
     return false;
   }
 
